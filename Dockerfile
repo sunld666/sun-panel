@@ -12,8 +12,7 @@ COPY ./package.json /build
 
 # COPY ./pnpm-lock.yaml /build
 
-RUN pnpm install
-
+RUN pnpm install --allow-scripts=esbuild,vue-demi
 COPY . /build
 
 RUN pnpm run build
