@@ -1,39 +1,27 @@
 # ==========================================
-# 终极解法：强制在 x86 环境下编译前端，彻底避开 ARM 依赖死结
+# 绝杀方案：彻底移除 Node 环境，只打包纯 Go 后端
 # ==========================================
-
-# 显式指定在人类电脑通用的 amd64 环境下编译前端，这样 pnpm install 100% 不会报错
-FROM --platform=linux/amd64 node:18-alpine AS web_image
-WORKDIR /build
-
-# 安装 pnpm 并绕过所有脚本限制
-RUN npm install pnpm -g
-COPY ./package.json ./
-RUN pnpm config set ignore-scripts true
-RUN pnpm install
-
-# 复制前端源码并打包
-COPY . .
-RUN pnpm run build
-
-
-# 第二阶段：编译后端 Go（支持多架构自动化）
 FROM golang:1.21-alpine3.18 AS server_image
+
 WORKDIR /build
+
+# 安装基础编译环境
 RUN apk add --no-cache gcc musl-dev
+
+# 复制所有的代码（包含我们准备好的前端 dist）
 COPY . .
 
-# 把上面在 amd64 顺利打包好的前端文件拿过来
-COPY --from=web_image /build/web/dist ./web/dist
-
+# 编译 Go 后端
 ENV GOPROXY=https://goproxy.cn,direct
 RUN go mod download
 RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o sun-panel main.go
 
 
-# 第三阶段：打包极简多架构最终运行镜像
+# 最终运行阶段
 FROM alpine:3.18
 WORKDIR /app
+
+# 把编译好的后端程序和前端静态文件直接拷过来
 COPY --from=server_image /build/sun-panel /app/sun-panel
 COPY --from=server_image /build/web/dist /app/web/dist
 
