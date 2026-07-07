@@ -1,5 +1,5 @@
 # ==========================================
-# 第一阶段：在纯 x86 (amd64) 环境下编译前端，彻底免除 ARM 模拟环境下的 pnpm 报错
+# 第一阶段：在纯 x86 (amd64) 环境下编译前端，彻底免除 ARM 报错
 # ==========================================
 FROM --platform=linux/amd64 node:18-alpine AS web_image
 WORKDIR /build
@@ -26,13 +26,14 @@ RUN apk add --no-cache gcc musl-dev git bash curl
 # 仅把后端专有的 service 目录复制到编译工作区
 COPY ./service .
 
-# 配置海外 GitHub Actions 专用的 Go 官方代理（不走国内源，速度极快且稳定）
+# 配置海外 GitHub Actions 专用的 Go 官方代理
 RUN go env -w GO111MODULE=on
 RUN go env -w GOPROXY=https://proxy.golang.org,direct
 
 # 下载依赖并编译出支持多架构的二进制后端
 RUN go mod download
-RUN CGO_ENABLED=1 go build -o sun-panel --ldflags="-X sun-panel/global.RUNCODE=release -X sun-panel/global.ISDOCKER=docker" main.go
+# 【核心修复】：将之前的 --ldflags 改回 Go 官方严格要求的单短横线 -ldflags，并使用 . 编译当前目录
+RUN CGO_ENABLED=1 go build -ldflags="-s -w -X sun-panel/global.RUNCODE=release -X sun-panel/global.ISDOCKER=docker" -o sun-panel .
 
 # ==========================================
 # 第三阶段：最终轻量化多架构运行镜像
@@ -42,8 +43,8 @@ WORKDIR /app
 
 RUN apk add --no-cache bash ca-certificates tzdata
 
-# 从第一阶段复制编译好的前端静态资源
-COPY --from=web_image /build/dist /app/web
+# 从第一阶段复制编译好的前端静态资源到程序指定的 web/dist 目录
+COPY --from=web_image /build/dist /app/web/dist
 
 # 从第二阶段复制编译好的 Go 后端程序
 COPY --from=server_image /build/service/sun-panel /app/sun-panel
